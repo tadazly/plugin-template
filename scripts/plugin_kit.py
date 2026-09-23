@@ -52,6 +52,11 @@ SEMVER_RE = re.compile(
 )
 VERSION_HEADING_RE = re.compile(r"^## \[(?P<version>[^\]]+)\](?P<rest>.*)$", re.M)
 BIN_REFERENCE_RE = re.compile(r"^\./bin/([^/\\]+?)(?:\.exe)?$")
+CLAUDE_BIN_REFERENCE_RE = re.compile(r"^\$\{CLAUDE_PLUGIN_ROOT\}/bin/([^/\\]+?)(?:\.exe|\.cmd)?$")
+# Interpreter names resolve differently per platform: macOS has no `python`,
+# and on Windows `python3` is often only the Microsoft Store stub.
+INTERPRETER_RE = re.compile(r"^(?:python[0-9.]*|py)(?:\.exe)?$", re.I)
+MCP_GUIDE = ".agents/skills/plugin-create/references/mcp.md"
 ABSOLUTE_PATH_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|/|\\\\)")
 SECRET_RES = (
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}"),
@@ -511,18 +516,24 @@ def flatten(value: Any, prefix: str = "") -> list[tuple[str, Any]]:
     return [(prefix, value)]
 
 
+def server_values(server: dict[str, Any]) -> list[str]:
+    values = [server.get("command"), *(server.get("args") or []), *(server.get("env") or {}).values()]
+    return [value for value in values if isinstance(value, str)]
+
+
 def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]) -> None:
     try:
         servers = load_codex_mcp(plugin, manifest)
         convert_mcp_servers(servers)
+        claude_servers = render_claude_manifest(root, plugin, manifest).get("mcpServers") or {}
+        claude_config = kit_config(root).get("claude")
     except KitError as error:
         report.error(str(error))
         return
     label = relative(root, plugin / CODEX_MCP)
-    tools: set[str] = set()
+    codex_tools: set[str] = set()
     for name, server in servers.items():
-        values = [server.get("command"), *(server.get("args") or []), *(server.get("env") or {}).values()]
-        for value in (v for v in values if isinstance(v, str)):
+        for value in server_values(server):
             if ABSOLUTE_PATH_RE.match(value):
                 report.error(f"{label}: server {name!r} uses an absolute path {value!r}")
             elif ("/" in value or "\\" in value) and not value.startswith(("./", "-", "${", "http")):
@@ -532,17 +543,75 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
                 )
             match = BIN_REFERENCE_RE.match(value)
             if match:
-                tools.add(match.group(1))
+                codex_tools.add(match.group(1))
         if server.get("cwd") not in (None, "."):
             report.warn(f"{label}: server {name!r} cwd is ignored by Claude Code; do not depend on it")
-    # Compiled plugins may keep binaries out of main and add them only to the
-    # release tag, so a missing binary blocks releases but not development.
-    for tool in sorted(tools):
-        present = [f for f in (tool, f"{tool}.exe") if (plugin / "bin" / f).is_file()]
+
+    overrides = claude_config.get("mcpServers") if isinstance(claude_config, dict) else None
+    for source, entries in ((label, servers), (f"{KIT_CONFIG.as_posix()} claude.mcpServers", overrides)):
+        for name, server in (entries or {}).items():
+            command = server.get("command") if isinstance(server, dict) else None
+            if isinstance(command, str) and INTERPRETER_RE.fullmatch(command):
+                report.error(
+                    f"{source}: server {name!r} starts the interpreter {command!r} by name; macOS has no "
+                    "'python' and Windows often only has a Store stub for 'python3', so start a launcher "
+                    f"that picks the interpreter per platform (see {MCP_GUIDE})"
+                )
+    claude_tools: set[str] = set()
+    for name, server in claude_servers.items():
+        if not isinstance(server, dict):
+            continue
+        if str(server.get("command", "")).lower() in ("node", "node.exe"):
+            report.warn(
+                f"{relative(root, plugin / CLAUDE_MANIFEST)}: server {name!r} runs 'node', which Claude Code and "
+                f"WorkBuddy may not find on PATH even when Codex does; override it under 'claude.mcpServers' "
+                f"in {KIT_CONFIG.as_posix()} (see {MCP_GUIDE})"
+            )
+        for value in server_values(server):
+            match = CLAUDE_BIN_REFERENCE_RE.match(value)
+            if match:
+                claude_tools.add(match.group(1))
+    check_launchers(report, root, plugin, codex_tools, claude_tools)
+
+
+def check_launchers(report: Report, root: Path, plugin: Path, codex_tools: set[str], claude_tools: set[str]) -> None:
+    """Every referenced bin/<tool> must start on macOS and Windows.
+
+    Windows turns an extension-less command into <tool>.exe in both clients;
+    Claude Code also runs <tool>.cmd through cmd.exe (verified with Claude Code
+    2.1.280), which is not verified for Codex.
+    """
+    for tool in sorted(codex_tools | claude_tools):
+        base = plugin / "bin" / tool
+        label = relative(root, base)
+        present = {suffix for suffix in ("", ".exe", ".cmd") if base.with_name(tool + suffix).is_file()}
+        # Compiled plugins may keep binaries out of main and add them only to the
+        # release tag, so a missing binary blocks releases but not development.
         if not present:
-            report.release_blocker(f"plugins/{plugin.name}/bin/{tool} (or {tool}.exe) is referenced but missing")
-        elif len(present) == 1:
-            report.warn(f"plugins/{plugin.name}/bin/ only ships {present[0]}; the other platform cannot start it")
+            report.release_blocker(f"{label} (or {tool}.exe) is referenced but missing")
+            continue
+        if "" not in present:
+            report.warn(f"{label} is missing; macOS and Linux cannot start it")
+        if tool in codex_tools and ".exe" not in present:
+            report.warn(
+                f"{label}.exe is missing; Codex on Windows is only known to start .exe"
+                + (f" ({tool}.cmd is verified for Claude Code only)" if ".cmd" in present else "")
+            )
+        elif not present & {".exe", ".cmd"}:
+            report.warn(f"{label}.exe or {tool}.cmd is missing; Windows cannot start it")
+        if "" in present:
+            with base.open("rb") as stream:
+                script = stream.read(2) == b"#!"
+            if script and b"\r" in base.read_bytes():
+                report.error(f"{label}: shell launcher uses CRLF line endings; macOS rejects it, save it with LF")
+            stage = git(root, "ls-files", "--stage", "--", label)
+            if stage and stage.startswith("100644"):
+                report.error(
+                    f"{label} is tracked without the executable bit, so macOS cannot start it; "
+                    f"run 'git update-index --chmod=+x {label}'"
+                )
+        if ".cmd" in present and not base.with_name(f"{tool}.cmd").read_bytes().isascii():
+            report.error(f"{label}.cmd must be ASCII; cmd.exe reads batch files in the system code page")
 
 
 def check_skills(report: Report, root: Path, skills_root: Path, plugin_skills: bool) -> None:

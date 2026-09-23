@@ -22,7 +22,7 @@ description: 在基于 plugin-template 的仓库中，按用户需求制作或�
 3. **设计**。按场景拆成若干 Skill；只有确定性执行、读写本地资源或处理大量数据时才做 MCP 工具，工具默认只读，修改数据的工具单独列出。规则见 [references/skills.md](references/skills.md) 与 [references/mcp.md](references/mcp.md)。
 4. **实现**。
    - Skill：`plugins/<name>/skills/<skill>/SKILL.md`，可选 `agents/openai.yaml`、`references/`、`scripts/`。
-   - MCP：`plugins/<name>/.codex-mcp.json`，manifest 声明 `"mcpServers": "./.codex-mcp.json"`。
+   - MCP：`plugins/<name>/.codex-mcp.json`，manifest 声明 `"mcpServers": "./.codex-mcp.json"`。启动命令不要直接写 `python`、`python3`、`py` 等解释器名，按 [references/mcp.md](references/mcp.md) 的「跨平台启动」选择方案。
    - 程序源码放仓库根目录（如 `src/`、`server/`），插件目录只放运行所需文件。
    - manifest 字段规则见 [references/manifest.md](references/manifest.md)。
 5. **同步与校验**。

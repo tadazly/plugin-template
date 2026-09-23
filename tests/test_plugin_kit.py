@@ -168,6 +168,65 @@ class McpTests(KitTestCase):
         kit.write_text(plugin / "bin" / "tool.exe", "binary")
         self.assertFalse(any("bin/tool" in error for error in kit.check(self.root, tag="v0.1.0").errors))
 
+    def use_claude_launcher(self, plugin: Path) -> Path:
+        """Codex keeps a Node launcher; Claude Code gets a sh + .cmd launcher pair."""
+        self.write_mcp(plugin, {"tool": {"command": "node", "args": ["./scripts/start.js"]}})
+        override = {"command": "${CLAUDE_PLUGIN_ROOT}/bin/tool-mcp", "args": []}
+        kit.write_text(self.root / kit.KIT_CONFIG, kit.dump_json({"claude": {"mcpServers": {"tool": override}}}))
+        kit.sync(self.root)
+        (plugin / "bin").mkdir()
+        (plugin / "bin" / "tool-mcp").write_bytes(b'#!/bin/sh\nexec python3 "$@"\n')
+        (plugin / "bin" / "tool-mcp.cmd").write_bytes(b"@echo off\r\npython %*\r\n")
+        return plugin / "bin"
+
+    def test_interpreter_names_are_rejected_and_node_warns_for_claude(self) -> None:
+        plugin = self.finish_plugin()
+        self.write_mcp(
+            plugin,
+            {
+                "py": {"command": "python3", "args": ["./server/main.py"]},
+                "js": {"command": "node", "args": ["./scripts/start.js"]},
+                "own": {"command": "./bin/python", "args": ["./server/main.py"]},
+            },
+        )
+        kit.sync(self.root)
+        report = kit.check(self.root)
+        self.assertEqual(1, sum("starts the interpreter" in error for error in report.errors), report.errors)
+        self.assertTrue(any("'py'" in error and "'python3'" in error for error in report.errors))
+        self.assertTrue(any("'js'" in warning and "runs 'node'" in warning for warning in report.warnings))
+
+        kit.write_text(self.root / kit.KIT_CONFIG, kit.dump_json({"claude": {"mcpServers": {"own": {"command": "py"}}}}))
+        kit.sync(self.root)
+        errors = kit.check(self.root).errors
+        self.assertTrue(any("plugin-kit.json" in error and "'py'" in error for error in errors), errors)
+
+    def test_claude_launcher_pair_passes_and_reports_platform_gaps(self) -> None:
+        bin_dir = self.use_claude_launcher(self.finish_plugin())
+        report = kit.check(self.root)
+        self.assertEqual([], report.errors)
+        self.assertFalse(any("tool-mcp" in warning or "'node'" in warning for warning in report.warnings))
+        (bin_dir / "tool-mcp.cmd").unlink()
+        self.assertTrue(any("tool-mcp.cmd is missing" in warning for warning in kit.check(self.root).warnings))
+
+    def test_launcher_line_endings_and_encoding(self) -> None:
+        bin_dir = self.use_claude_launcher(self.finish_plugin())
+        (bin_dir / "tool-mcp").write_bytes(b'#!/bin/sh\r\nexec python3 "$@"\r\n')
+        (bin_dir / "tool-mcp.cmd").write_bytes("@echo off\r\necho 缺少 Python\r\n".encode("utf-8"))
+        errors = kit.check(self.root).errors
+        self.assertTrue(any("CRLF" in error for error in errors), errors)
+        self.assertTrue(any("must be ASCII" in error for error in errors), errors)
+
+    def test_tracked_launcher_needs_executable_bit(self) -> None:
+        self.use_claude_launcher(self.finish_plugin())
+        if kit.git(self.root, "init", "-q") is None:
+            self.skipTest("git is not available")
+        launcher = "plugins/sample-plugin/bin/tool-mcp"
+        kit.git(self.root, "add", "--", launcher)
+        kit.git(self.root, "update-index", "--chmod=-x", "--", launcher)
+        self.assertTrue(any("executable bit" in error for error in kit.check(self.root).errors))
+        kit.git(self.root, "update-index", "--chmod=+x", "--", launcher)
+        self.assertFalse(any("executable bit" in error for error in kit.check(self.root).errors))
+
 
 class ReleaseTests(KitTestCase):
     def test_first_release_then_minor_bump(self) -> None:

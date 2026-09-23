@@ -30,6 +30,7 @@
 
 - 三端只共享 `skills/`。插件根目录不放 `.mcp.json` 和 Codex 格式的 `hooks/hooks.json`，因为 Claude Code 与 WorkBuddy 会自动加载这些默认路径。
 - MCP server 不依赖工作目录；stdout 只写协议消息，日志写 stderr；工具默认只读，修改数据的工具需要确认。
+- MCP 的 `command` 不要按名字启动解释器（`python`、`python3`、`py`），Claude Code 侧也不要依赖 `node`，因为各平台、各客户端的 PATH 不同。应改用编译型启动器，或按平台选择解释器的启动器，见 plugin-create 的 `references/mcp.md`「跨平台启动」。
 - Skill 正文引用 MCP 工具时只写短名。
 - WorkBuddy 端尚未验收，文档中如实标注。
 

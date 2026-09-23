@@ -7,3 +7,7 @@ plugins/*/bin/** binary
 *.jpg binary
 *.ico binary
 *.zip binary
+
+# Windows batch launchers (including plugins/*/bin/*.cmd): cmd.exe expects CRLF
+*.cmd text eol=crlf diff merge
+*.bat text eol=crlf diff merge
