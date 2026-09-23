@@ -168,11 +168,9 @@ class McpTests(KitTestCase):
         kit.write_text(plugin / "bin" / "tool.exe", "binary")
         self.assertFalse(any("bin/tool" in error for error in kit.check(self.root, tag="v0.1.0").errors))
 
-    def use_claude_launcher(self, plugin: Path) -> Path:
-        """Codex keeps a Node launcher; Claude Code gets a sh + .cmd launcher pair."""
-        self.write_mcp(plugin, {"tool": {"command": "node", "args": ["./scripts/start.js"]}})
-        override = {"command": "${CLAUDE_PLUGIN_ROOT}/bin/tool-mcp", "args": []}
-        kit.write_text(self.root / kit.KIT_CONFIG, kit.dump_json({"claude": {"mcpServers": {"tool": override}}}))
+    def use_launcher_pair(self, plugin: Path, command: str = "./bin/tool-mcp") -> Path:
+        """One sh + .cmd launcher pair serves both clients on macOS and Windows."""
+        self.write_mcp(plugin, {"tool": {"command": command, "cwd": "."}})
         kit.sync(self.root)
         (plugin / "bin").mkdir()
         (plugin / "bin" / "tool-mcp").write_bytes(b'#!/bin/sh\nexec python3 "$@"\n')
@@ -200,16 +198,34 @@ class McpTests(KitTestCase):
         errors = kit.check(self.root).errors
         self.assertTrue(any("plugin-kit.json" in error and "'py'" in error for error in errors), errors)
 
-    def test_claude_launcher_pair_passes_and_reports_platform_gaps(self) -> None:
-        bin_dir = self.use_claude_launcher(self.finish_plugin())
+    def test_launcher_pair_passes_and_reports_platform_gaps(self) -> None:
+        bin_dir = self.use_launcher_pair(self.finish_plugin())
+        claude = json.loads((self.root / "plugins/sample-plugin" / kit.CLAUDE_MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual({"command": "${CLAUDE_PLUGIN_ROOT}/bin/tool-mcp"}, claude["mcpServers"]["tool"])
         report = kit.check(self.root)
         self.assertEqual([], report.errors)
-        self.assertFalse(any("tool-mcp" in warning or "'node'" in warning for warning in report.warnings))
+        self.assertFalse(any("tool-mcp" in warning for warning in report.warnings), report.warnings)
         (bin_dir / "tool-mcp.cmd").unlink()
         self.assertTrue(any("tool-mcp.cmd is missing" in warning for warning in kit.check(self.root).warnings))
 
+    def test_claude_override_launcher_is_checked(self) -> None:
+        plugin = self.finish_plugin()
+        self.write_mcp(plugin, {"tool": {"command": "node", "args": ["./scripts/start.js"]}})
+        override = {"command": "${CLAUDE_PLUGIN_ROOT}/bin/tool-mcp", "args": []}
+        kit.write_text(self.root / kit.KIT_CONFIG, kit.dump_json({"claude": {"mcpServers": {"tool": override}}}))
+        kit.sync(self.root)
+        kit.write_text(plugin / "bin" / "tool-mcp", '#!/bin/sh\nexec python3 "$@"\n')
+        warnings = kit.check(self.root).warnings
+        self.assertFalse(any("'node'" in warning for warning in warnings), warnings)
+        self.assertTrue(any("tool-mcp.cmd is missing" in warning for warning in warnings), warnings)
+
+    def test_windows_only_command_warns(self) -> None:
+        self.use_launcher_pair(self.finish_plugin(), command="./bin/tool-mcp.cmd")
+        warnings = kit.check(self.root).warnings
+        self.assertTrue(any("names a Windows-only file" in warning for warning in warnings), warnings)
+
     def test_launcher_line_endings_and_encoding(self) -> None:
-        bin_dir = self.use_claude_launcher(self.finish_plugin())
+        bin_dir = self.use_launcher_pair(self.finish_plugin())
         (bin_dir / "tool-mcp").write_bytes(b'#!/bin/sh\r\nexec python3 "$@"\r\n')
         (bin_dir / "tool-mcp.cmd").write_bytes("@echo off\r\necho 缺少 Python\r\n".encode("utf-8"))
         errors = kit.check(self.root).errors
@@ -217,7 +233,7 @@ class McpTests(KitTestCase):
         self.assertTrue(any("must be ASCII" in error for error in errors), errors)
 
     def test_tracked_launcher_needs_executable_bit(self) -> None:
-        self.use_claude_launcher(self.finish_plugin())
+        self.use_launcher_pair(self.finish_plugin())
         if kit.git(self.root, "init", "-q") is None:
             self.skipTest("git is not available")
         launcher = "plugins/sample-plugin/bin/tool-mcp"

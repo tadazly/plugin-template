@@ -70,11 +70,19 @@
 - **Claude Code 忽略 `cwd`**：server 在用户会话目录启动，插件内的文件一律通过 `${CLAUDE_PLUGIN_ROOT}` 定位。
 - **不要在 Git Bash 里验证 Windows**：Git Bash 的 PATH 里有 `sh`，Claude Code 会按 shebang 执行 sh 启动器，结果看起来正常；在普通 PowerShell 里却会连接失败。
 
+两种方案都只写一份 Codex 配置（command 为 `./bin/<name>`，`cwd` 为 `.`），由 `sync` 转换为 Claude Code 的 `${CLAUDE_PLUGIN_ROOT}/bin/<name>`，不需要按客户端分别配置：
+
 | 方案 | 做法 | 验证情况 |
 | --- | --- | --- |
-| 编译二进制或编译型启动器（首选） | command 写 `./bin/<tool>`，同时提供 `bin/<tool>`（macOS）和 `bin/<tool>.exe`（Windows） | 一份配置两端通用，design-rag 即采用这种方式。Windows 上的 Claude Code 会为无扩展名命令选用 `.exe`（Claude Code 2.1.280 实测） |
-| 解释型 server：Claude Code 侧 | 按上文用 `claude.mcpServers` 覆盖，command 指向 `${CLAUDE_PLUGIN_ROOT}/bin/<launcher>`；同时提供 sh 启动器 `bin/<launcher>` 和 `bin/<launcher>.cmd` | Claude Code 2.1.280 实测：Windows 把无扩展名命令解析到 `.cmd` 并交给 cmd.exe 执行，参数经 `%*` 原样传递；macOS 执行 sh 启动器。只提供 sh 启动器时，Windows 无法启动 |
-| 解释型 server：Codex 侧 | Node 启动器按下文顺序选择解释器（参考 egret-agent-inspector 的 `scripts/start_mcp.js`），或使用编译型启动器 | Codex 能否解析 `.cmd` 尚未验证，所以不要在 Codex 配置里使用 `.cmd` 启动器 |
+| 编译二进制或编译型启动器 | 同时提供 `bin/<tool>`（macOS）和 `bin/<tool>.exe`（Windows） | design-rag 采用这种方式。两个客户端在 Windows 上都会为无扩展名命令选用 `.exe` |
+| 解释型 server 的启动器对 | 同时提供 sh 启动器 `bin/<launcher>` 和 `bin/<launcher>.cmd`，由启动器选择解释器 | 两个客户端在 Windows 上都会把无扩展名命令解析到 `.cmd`，交给 cmd.exe 执行，参数经 `%*` 原样传递；macOS 执行 sh 启动器。只提供 sh 启动器时，Windows 无法启动 |
+
+以上结论的实测版本：
+- Claude Code 2.1.280：Windows 和 macOS；
+- Codex 0.156.1：Windows；
+- Codex 0.155.0-alpha.16：macOS，即 ChatGPT 桌面端自带的版本。
+
+Node 启动器（如 egret-agent-inspector 的 `scripts/start_mcp.js`）只在能找到 `node` 的客户端里可用，Claude Code 侧不要依赖它。
 
 启动器约定：
 
@@ -118,8 +126,8 @@ exit /b 1
 exit /b %ERRORLEVEL%
 ```
 
-使用时把 `example-plugin`、`EXAMPLE_PYTHON` 和 `server/main.py` 替换成插件自己的名称和路径。这两个启动器已在 Claude Code 2.1.280 上实测：
-- Windows 上，`python` 只是商店占位程序时会回退到 `py -3`；找不到任何解释器时以 1 退出。
+使用时把 `example-plugin`、`EXAMPLE_PYTHON` 和 `server/main.py` 替换成插件自己的名称和路径。这两个启动器已按上文版本在 Claude Code 和 Codex 中实测：
+- Windows 上，如果 `python` 只是商店占位程序，会回退到 `py -3`；找不到任何解释器时以 1 退出。
 - macOS 上使用 PATH 中的 `python3`。
 
 编译型插件的二进制不提交到 main，由发布流程加进 tag，见 plugin-release 的 [compiled-release.md](../../plugin-release/references/compiled-release.md)。

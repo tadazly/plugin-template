@@ -51,8 +51,8 @@ SEMVER_RE = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 VERSION_HEADING_RE = re.compile(r"^## \[(?P<version>[^\]]+)\](?P<rest>.*)$", re.M)
-BIN_REFERENCE_RE = re.compile(r"^\./bin/([^/\\]+?)(?:\.exe)?$")
-CLAUDE_BIN_REFERENCE_RE = re.compile(r"^\$\{CLAUDE_PLUGIN_ROOT\}/bin/([^/\\]+?)(?:\.exe|\.cmd)?$")
+BIN_REFERENCE_RE = re.compile(r"^(?:\./|\$\{CLAUDE_PLUGIN_ROOT\}/)bin/([^/\\]+?)(?:\.exe|\.cmd)?$")
+PLATFORM_FILE_RE = re.compile(r"/bin/[^/\\]+\.(?:exe|cmd)$", re.I)
 # Interpreter names resolve differently per platform: macOS has no `python`,
 # and on Windows `python3` is often only the Microsoft Store stub.
 INTERPRETER_RE = re.compile(r"^(?:python[0-9.]*|py)(?:\.exe)?$", re.I)
@@ -531,7 +531,7 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
         report.error(str(error))
         return
     label = relative(root, plugin / CODEX_MCP)
-    codex_tools: set[str] = set()
+    tools: set[str] = set()
     for name, server in servers.items():
         for value in server_values(server):
             if ABSOLUTE_PATH_RE.match(value):
@@ -543,7 +543,7 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
                 )
             match = BIN_REFERENCE_RE.match(value)
             if match:
-                codex_tools.add(match.group(1))
+                tools.add(match.group(1))
         if server.get("cwd") not in (None, "."):
             report.warn(f"{label}: server {name!r} cwd is ignored by Claude Code; do not depend on it")
 
@@ -551,37 +551,41 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
     for source, entries in ((label, servers), (f"{KIT_CONFIG.as_posix()} claude.mcpServers", overrides)):
         for name, server in (entries or {}).items():
             command = server.get("command") if isinstance(server, dict) else None
-            if isinstance(command, str) and INTERPRETER_RE.fullmatch(command):
+            if not isinstance(command, str):
+                continue
+            if INTERPRETER_RE.fullmatch(command):
                 report.error(
                     f"{source}: server {name!r} starts the interpreter {command!r} by name; macOS has no "
                     "'python' and Windows often only has a Store stub for 'python3', so start a launcher "
                     f"that picks the interpreter per platform (see {MCP_GUIDE})"
                 )
-    claude_tools: set[str] = set()
+            elif PLATFORM_FILE_RE.search(command):
+                report.warn(
+                    f"{source}: server {name!r} command {command!r} names a Windows-only file; drop the "
+                    "extension so macOS runs bin/<name> and Windows picks <name>.exe or <name>.cmd"
+                )
     for name, server in claude_servers.items():
         if not isinstance(server, dict):
             continue
         if str(server.get("command", "")).lower() in ("node", "node.exe"):
             report.warn(
                 f"{relative(root, plugin / CLAUDE_MANIFEST)}: server {name!r} runs 'node', which Claude Code and "
-                f"WorkBuddy may not find on PATH even when Codex does; override it under 'claude.mcpServers' "
-                f"in {KIT_CONFIG.as_posix()} (see {MCP_GUIDE})"
+                f"WorkBuddy may not find on PATH even when Codex does; use a bin/ launcher instead (see {MCP_GUIDE})"
             )
         for value in server_values(server):
-            match = CLAUDE_BIN_REFERENCE_RE.match(value)
+            match = BIN_REFERENCE_RE.match(value)
             if match:
-                claude_tools.add(match.group(1))
-    check_launchers(report, root, plugin, codex_tools, claude_tools)
+                tools.add(match.group(1))
+    check_launchers(report, root, plugin, tools)
 
 
-def check_launchers(report: Report, root: Path, plugin: Path, codex_tools: set[str], claude_tools: set[str]) -> None:
+def check_launchers(report: Report, root: Path, plugin: Path, tools: set[str]) -> None:
     """Every referenced bin/<tool> must start on macOS and Windows.
 
-    Windows turns an extension-less command into <tool>.exe in both clients;
-    Claude Code also runs <tool>.cmd through cmd.exe (verified with Claude Code
-    2.1.280), which is not verified for Codex.
+    On Windows both clients turn an extension-less command into <tool>.exe or
+    <tool>.cmd (verified with Claude Code 2.1.280 and Codex 0.156.1).
     """
-    for tool in sorted(codex_tools | claude_tools):
+    for tool in sorted(tools):
         base = plugin / "bin" / tool
         label = relative(root, base)
         present = {suffix for suffix in ("", ".exe", ".cmd") if base.with_name(tool + suffix).is_file()}
@@ -592,12 +596,7 @@ def check_launchers(report: Report, root: Path, plugin: Path, codex_tools: set[s
             continue
         if "" not in present:
             report.warn(f"{label} is missing; macOS and Linux cannot start it")
-        if tool in codex_tools and ".exe" not in present:
-            report.warn(
-                f"{label}.exe is missing; Codex on Windows is only known to start .exe"
-                + (f" ({tool}.cmd is verified for Claude Code only)" if ".cmd" in present else "")
-            )
-        elif not present & {".exe", ".cmd"}:
+        if not present & {".exe", ".cmd"}:
             report.warn(f"{label}.exe or {tool}.cmd is missing; Windows cannot start it")
         if "" in present:
             with base.open("rb") as stream:
