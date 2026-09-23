@@ -1,0 +1,6 @@
+interface:
+  display_name: "制作插件"
+  short_description: "按需求制作三端通用插件并生成清单"
+  default_prompt: "使用 $plugin-create 把这个需求做成插件："
+policy:
+  allow_implicit_invocation: true

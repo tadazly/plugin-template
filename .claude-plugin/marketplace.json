@@ -1,0 +1,18 @@
+{
+  "name": "example-plugin-dev",
+  "owner": {
+    "name": "tadazly"
+  },
+  "metadata": {
+    "description": "Example Plugin 本地开发市场"
+  },
+  "plugins": [
+    {
+      "name": "example-plugin",
+      "version": "0.1.0",
+      "description": "示例插件：演示 Codex、Claude Code 与 WorkBuddy 三端通用插件的结构",
+      "displayName": "Example Plugin",
+      "source": "./plugins/example-plugin"
+    }
+  ]
+}

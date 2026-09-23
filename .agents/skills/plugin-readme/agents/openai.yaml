@@ -1,0 +1,6 @@
+interface:
+  display_name: "插件 README"
+  short_description: "按统一规则生成或更新插件 README"
+  default_prompt: "使用 $plugin-readme 根据当前插件更新 README。"
+policy:
+  allow_implicit_invocation: true

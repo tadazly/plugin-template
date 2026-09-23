@@ -1,0 +1,6 @@
+interface:
+  display_name: "示例技能"
+  short_description: "演示三端通用插件的目录结构"
+  default_prompt: "使用 $example-skill 说明这个插件的结构。"
+policy:
+  allow_implicit_invocation: false

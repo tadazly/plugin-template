@@ -1,0 +1,29 @@
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Local credentials and environment
+.env
+.env.*
+!.env.example
+
+# Local agent settings
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node.js
+node_modules/
+
+# Build and temporary output
+dist/
+.tmp/
+tmp/

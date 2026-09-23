@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+# Plugin binaries and assets
+plugins/*/bin/** binary
+*.exe binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary

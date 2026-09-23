@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Require the tagged commit on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Verify release
+        env:
+          PLUGIN_KIT_FORBIDDEN: ${{ secrets.PLUGIN_KIT_FORBIDDEN }}
+        run: |
+          python scripts/plugin_kit.py check --tag "$GITHUB_REF_NAME"
+          python -m unittest discover -s tests
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists."
+            exit 0
+          fi
+          python scripts/plugin_kit.py release-notes > "$RUNNER_TEMP/notes.md"
+          title="$(python scripts/plugin_kit.py info --field displayName) $GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$title" --notes-file "$RUNNER_TEMP/notes.md"
+
+  notify-s-plugins:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Notify s-plugins
+        env:
+          GH_TOKEN: ${{ secrets.S_PLUGINS_DISPATCH_TOKEN }}
+          S_PLUGINS_REPOSITORY: ${{ vars.S_PLUGINS_REPOSITORY || 'tadazly/s-plugins' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Repository secret S_PLUGINS_DISPATCH_TOKEN is not configured (see docs/development.md)."
+            exit 1
+          fi
+          python scripts/plugin_kit.py payload --ref "$GITHUB_REF_NAME" \
+            | gh api --method POST "repos/${S_PLUGINS_REPOSITORY}/dispatches" --input -
+          name="$(python scripts/plugin_kit.py info --field name)"
+          echo "Dispatched plugin-released for ${name}@${GITHUB_REF_NAME} to ${S_PLUGINS_REPOSITORY}." >> "$GITHUB_STEP_SUMMARY"

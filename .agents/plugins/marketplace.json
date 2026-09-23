@@ -1,0 +1,29 @@
+{
+  "name": "example-plugin-dev",
+  "interface": {
+    "displayName": "Example Plugin (dev)"
+  },
+  "plugins": [
+    {
+      "name": "example-plugin",
+      "version": "0.1.0",
+      "description": "示例插件：演示 Codex、Claude Code 与 WorkBuddy 三端通用插件的结构",
+      "source": {
+        "source": "local",
+        "path": "./plugins/example-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity",
+      "interface": {
+        "displayName": "Example Plugin",
+        "shortDescription": "演示三端通用插件结构的示例插件",
+        "longDescription": "插件模板自带的示例插件，只包含一个示例技能。用模板创建仓库后，由 agent 运行 init 重命名并替换为真实插件。",
+        "developerName": "tadazly",
+        "websiteURL": "https://github.com/tadazly/plugin-template"
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "发布插件"
+  short_description: "预检、定版本、打 tag 并同步到 s-plugins 市场"
+  default_prompt: "使用 $plugin-release 发布插件新版本。"
+policy:
+  allow_implicit_invocation: true

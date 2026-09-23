@@ -1,0 +1,30 @@
+{
+  "name": "example-plugin",
+  "version": "0.1.0",
+  "description": "示例插件：演示 Codex、Claude Code 与 WorkBuddy 三端通用插件的结构",
+  "author": {
+    "name": "tadazly"
+  },
+  "repository": "https://github.com/tadazly/plugin-template.git",
+  "license": "MIT",
+  "keywords": [
+    "example",
+    "template"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Example Plugin",
+    "shortDescription": "演示三端通用插件结构的示例插件",
+    "longDescription": "插件模板自带的示例插件，只包含一个示例技能。用模板创建仓库后，由 agent 运行 init 重命名并替换为真实插件。",
+    "developerName": "tadazly",
+    "category": "Productivity",
+    "websiteURL": "https://github.com/tadazly/plugin-template",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "用示例技能说明这个插件的结构。"
+    ],
+    "brandColor": "#4F46E5"
+  }
+}
