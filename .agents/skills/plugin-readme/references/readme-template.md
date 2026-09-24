@@ -38,7 +38,7 @@
 | --- | --- |
 | Codex | 已验收 / 尚未验收 |
 | Claude Code | 已验收 / 尚未验收 |
-| WorkBuddy | 尚未验收 |
+| WorkBuddy | 已验收 / 尚未验收 |
 
 ## 开发
 

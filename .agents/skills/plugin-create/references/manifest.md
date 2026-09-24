@@ -1,6 +1,8 @@
 # Manifest 规则
 
-唯一数据源是 `plugins/<name>/.codex-plugin/plugin.json`。`sync` 据此生成 Claude Code 与 WorkBuddy 共用的 `.claude-plugin/plugin.json`，并由 `check` 校验。
+唯一数据源是 `plugins/<name>/.codex-plugin/plugin.json`。`sync` 据此生成 Claude Code 的 `.claude-plugin/plugin.json` 与 WorkBuddy 的 `.codebuddy-plugin/plugin.json`，并由 `check` 校验。
+
+WorkBuddy 按 `.codebuddy-plugin`、`.workbuddy-plugin`、`.claude-plugin` 的顺序读取第一个找到的清单，所以它只看生成的 `.codebuddy-plugin/plugin.json`。这份清单只含 `name`、`version`、`description`、`author`、`homepage`、`repository`、`license`、`keywords`、`skills` 与 `mcpServers`，路径使用 `${CODEBUDDY_PLUGIN_ROOT}`，与 WorkBuddy 内置插件的写法一致。
 
 | 字段 | 规则 | Claude 清单 |
 | --- | --- | --- |
@@ -27,7 +29,7 @@ s-plugins 市场的条目由发布通知从这些字段生成，`category` 与�
 
 ## Claude 专属配置
 
-hooks、`userConfig`、非 stdio 的 MCP server 等 Claude Code 专属内容，写在仓库根目录 `plugin-kit.json` 的 `claude` 对象中（结构与 `.claude-plugin/plugin.json` 相同），`sync` 会深度合并进生成的清单：
+hooks、`userConfig`、非 stdio 的 MCP server 等 Claude Code 专属内容，写在仓库根目录 `plugin-kit.json` 的 `claude` 对象中（结构与 `.claude-plugin/plugin.json` 相同），`sync` 会深度合并进生成的清单。`claude.mcpServers` 的覆盖同样用于 WorkBuddy（路径改写为 `${CODEBUDDY_PLUGIN_ROOT}`）；只对 WorkBuddy 生效的内容写在 `codebuddy` 对象中，例如 `{"codebuddy": {"mcpServers": {"<server>": {"defer_loading": true}}}}`：
 
 ```json
 {

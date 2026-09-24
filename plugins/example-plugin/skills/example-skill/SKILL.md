@@ -11,7 +11,7 @@ description: 示例技能：说明本插件模板的目录结构与三端清单�
 
 1. 读取插件根目录下的 `.codex-plugin/plugin.json`，说明插件名称、版本与展示信息。
 2. 列出 `skills/` 下的全部 Skill，逐一给出一句话用途。
-3. 说明 `.claude-plugin/plugin.json` 由 `scripts/plugin_kit.py sync` 生成，Claude Code 与 WorkBuddy 共用。
+3. 说明 `.claude-plugin/plugin.json` 与 `.codebuddy-plugin/plugin.json` 由 `scripts/plugin_kit.py sync` 生成，分别供 Claude Code 与 WorkBuddy 使用。
 
 ## 约定
 

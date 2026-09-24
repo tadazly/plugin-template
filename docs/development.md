@@ -31,6 +31,7 @@ python scripts/plugin_kit.py sync
 python scripts/plugin_kit.py check
 python -m unittest discover -s tests
 claude plugin validate --strict plugins/<name>
+codebuddy plugin validate plugins/<name>        # 装有 CodeBuddy CLI 时，先退出 WorkBuddy
 ```
 
 push main 或提 PR 时，CI（`.github/workflows/ci.yml`）会在 Ubuntu 与 Windows 上运行同样的检查，并用 Claude Code CLI 校验清单。
@@ -52,7 +53,7 @@ push main 或提 PR 时，CI（`.github/workflows/ci.yml`）会在 Ubuntu 与 Wi
 | --- | --- |
 | Claude Code | `claude --plugin-dir ./plugins/<name>`；或 `claude plugin marketplace add .` 后 `claude plugin install <name>@<name>-dev` |
 | Codex | `codex plugin marketplace add .` 后 `codex plugin add <name>@<name>-dev`，然后新建会话 |
-| WorkBuddy | 尚未验收 |
+| WorkBuddy | 先退出 WorkBuddy，把 `CODEBUDDY_CONFIG_DIR` 指向临时目录，然后执行 `codebuddy plugin validate plugins/<name>`、`codebuddy plugin marketplace add .` 与 `codebuddy plugin install <name>@<name>-dev`。MCP 要在桌面端新对话中验证，日志见 `~/.workbuddy/logs/<日期>/<会话>.log` |
 
 - 本地开发市场名为 `<name>-dev`。它安装的是工作区内容，与 s-plugins 上的正式版本互不影响。
 - MCP 变更需要新开会话才生效。`claude mcp list` 可做健康检查，但会真实启动 server；有状态的 server 先把数据目录指向临时目录。

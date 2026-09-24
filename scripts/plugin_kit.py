@@ -34,6 +34,8 @@ PLACEHOLDER = "TODO"
 
 CODEX_MANIFEST = Path(".codex-plugin/plugin.json")
 CLAUDE_MANIFEST = Path(".claude-plugin/plugin.json")
+CODEBUDDY_MANIFEST = Path(".codebuddy-plugin/plugin.json")
+CODEBUDDY_PLUGIN_ROOT = "${CODEBUDDY_PLUGIN_ROOT}"
 CODEX_MCP = "./.codex-mcp.json"
 CLAUDE_PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}"
 DEV_SKILLS = Path(".agents/skills")
@@ -51,7 +53,7 @@ SEMVER_RE = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 VERSION_HEADING_RE = re.compile(r"^## \[(?P<version>[^\]]+)\](?P<rest>.*)$", re.M)
-BIN_REFERENCE_RE = re.compile(r"^(?:\./|\$\{CLAUDE_PLUGIN_ROOT\}/)bin/([^/\\]+?)(?:\.exe|\.cmd)?$")
+BIN_REFERENCE_RE = re.compile(r"^(?:\./|\$\{(?:CLAUDE|CODEBUDDY)_PLUGIN_ROOT\}/)bin/([^/\\]+?)(?:\.exe|\.cmd)?$")
 PLATFORM_FILE_RE = re.compile(r"/bin/[^/\\]+\.(?:exe|cmd)$", re.I)
 # Interpreter names resolve differently per platform: macOS has no `python`,
 # and on Windows `python3` is often only the Microsoft Store stub.
@@ -277,7 +279,7 @@ def deep_merge(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_claude_manifest(root: Path, plugin: Path, manifest: dict[str, Any]) -> dict[str, Any]:
-    """Claude Code manifest; WorkBuddy reads the same .claude-plugin directory."""
+    """Claude Code manifest."""
     interface = manifest.get("interface") or {}
     claude = {
         "name": manifest.get("name"),
@@ -293,6 +295,34 @@ def render_claude_manifest(root: Path, plugin: Path, manifest: dict[str, Any]) -
     }
     claude = {key: value for key, value in claude.items() if value not in (None, "", [], {})}
     return deep_merge(claude, kit_config(root).get("claude", {}))
+
+
+def rebase_plugin_root(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace(CLAUDE_PLUGIN_ROOT, CODEBUDDY_PLUGIN_ROOT)
+    if isinstance(value, list):
+        return [rebase_plugin_root(item) for item in value]
+    if isinstance(value, dict):
+        return {key: rebase_plugin_root(item) for key, item in value.items()}
+    return value
+
+
+def render_codebuddy_manifest(root: Path, plugin: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    """WorkBuddy / CodeBuddy manifest.
+
+    WorkBuddy reads the first of .codebuddy-plugin, .workbuddy-plugin and
+    .claude-plugin, so a native manifest keeps it off Claude-only fields. MCP
+    servers match Claude Code (both start them in the user's workspace) but use
+    ${CODEBUDDY_PLUGIN_ROOT}, like WorkBuddy's built-in plugins.
+    """
+    claude = render_claude_manifest(root, plugin, manifest)
+    fields = ("name", "version", "description", "author", "homepage", "repository", "license", "keywords")
+    codebuddy = {key: claude[key] for key in fields if key in claude}
+    if (plugin / "skills").is_dir():
+        codebuddy["skills"] = "./skills"
+    if claude.get("mcpServers"):
+        codebuddy["mcpServers"] = rebase_plugin_root(claude["mcpServers"])
+    return deep_merge(codebuddy, kit_config(root).get("codebuddy", {}))
 
 
 def render_dev_marketplaces(manifest: dict[str, Any]) -> dict[Path, dict[str, Any]]:
@@ -389,7 +419,8 @@ def render_skill_stubs(root: Path) -> dict[Path, bytes]:
 def render_outputs(root: Path) -> dict[Path, bytes]:
     plugin, manifest = read_manifest(root)
     outputs = {
-        plugin / CLAUDE_MANIFEST: dump_json(render_claude_manifest(root, plugin, manifest)).encode("utf-8")
+        plugin / CLAUDE_MANIFEST: dump_json(render_claude_manifest(root, plugin, manifest)).encode("utf-8"),
+        plugin / CODEBUDDY_MANIFEST: dump_json(render_codebuddy_manifest(root, plugin, manifest)).encode("utf-8"),
     }
     for path, marketplace in render_dev_marketplaces(manifest).items():
         outputs[root / path] = dump_json(marketplace).encode("utf-8")
@@ -494,8 +525,14 @@ def check_manifest(report: Report, root: Path, plugin: Path, manifest: dict[str,
         report.error(f"{label}: skills is declared but plugins/{plugin.name}/skills/ does not exist")
     if (plugin / ".mcp.json").exists():
         report.error(
-            f"plugins/{plugin.name}/.mcp.json is auto-loaded by Claude Code and WorkBuddy; "
-            f"move the Codex MCP config to {CODEX_MCP}"
+            f"plugins/{plugin.name}/.mcp.json is auto-loaded by Claude Code and WorkBuddy, and WorkBuddy lets it "
+            f"override the manifest's servers and runs them in the user's workspace; move the Codex MCP config to "
+            f"{CODEX_MCP}"
+        )
+    if any((plugin / "mcp").glob("*.json")):
+        report.error(
+            f"plugins/{plugin.name}/mcp/*.json is auto-loaded by WorkBuddy and overrides the manifest's servers; "
+            "rename the directory"
         )
     if (plugin / CODEX_MCP).exists() and manifest.get("mcpServers") != CODEX_MCP:
         report.error(f"{label}: declare \"mcpServers\": \"{CODEX_MCP}\"")
@@ -525,8 +562,11 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
     try:
         servers = load_codex_mcp(plugin, manifest)
         convert_mcp_servers(servers)
-        claude_servers = render_claude_manifest(root, plugin, manifest).get("mcpServers") or {}
-        claude_config = kit_config(root).get("claude")
+        client_servers = {
+            relative(root, plugin / CLAUDE_MANIFEST): render_claude_manifest(root, plugin, manifest),
+            relative(root, plugin / CODEBUDDY_MANIFEST): render_codebuddy_manifest(root, plugin, manifest),
+        }
+        config = kit_config(root)
     except KitError as error:
         report.error(str(error))
         return
@@ -547,9 +587,13 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
         if server.get("cwd") not in (None, "."):
             report.warn(f"{label}: server {name!r} cwd is ignored by Claude Code; do not depend on it")
 
-    overrides = claude_config.get("mcpServers") if isinstance(claude_config, dict) else None
-    for source, entries in ((label, servers), (f"{KIT_CONFIG.as_posix()} claude.mcpServers", overrides)):
-        for name, server in (entries or {}).items():
+    sources = [(label, servers)]
+    for client in ("claude", "codebuddy"):
+        section = config.get(client)
+        if isinstance(section, dict) and isinstance(section.get("mcpServers"), dict):
+            sources.append((f"{KIT_CONFIG.as_posix()} {client}.mcpServers", section["mcpServers"]))
+    for source, entries in sources:
+        for name, server in entries.items():
             command = server.get("command") if isinstance(server, dict) else None
             if not isinstance(command, str):
                 continue
@@ -564,18 +608,21 @@ def check_mcp(report: Report, root: Path, plugin: Path, manifest: dict[str, Any]
                     f"{source}: server {name!r} command {command!r} names a Windows-only file; drop the "
                     "extension so macOS runs bin/<name> and Windows picks <name>.exe or <name>.cmd"
                 )
-    for name, server in claude_servers.items():
-        if not isinstance(server, dict):
-            continue
-        if str(server.get("command", "")).lower() in ("node", "node.exe"):
-            report.warn(
-                f"{relative(root, plugin / CLAUDE_MANIFEST)}: server {name!r} runs 'node', which Claude Code and "
-                f"WorkBuddy may not find on PATH even when Codex does; use a bin/ launcher instead (see {MCP_GUIDE})"
-            )
-        for value in server_values(server):
-            match = BIN_REFERENCE_RE.match(value)
-            if match:
-                tools.add(match.group(1))
+    node_servers: set[str] = set()
+    for client_label, rendered in client_servers.items():
+        for name, server in (rendered.get("mcpServers") or {}).items():
+            if not isinstance(server, dict):
+                continue
+            if str(server.get("command", "")).lower() in ("node", "node.exe") and name not in node_servers:
+                node_servers.add(name)
+                report.warn(
+                    f"{client_label}: server {name!r} runs 'node', which Claude Code and WorkBuddy may not find "
+                    f"on PATH even when Codex does; use a bin/ launcher instead (see {MCP_GUIDE})"
+                )
+            for value in server_values(server):
+                match = BIN_REFERENCE_RE.match(value)
+                if match:
+                    tools.add(match.group(1))
     check_launchers(report, root, plugin, tools)
 
 

@@ -96,6 +96,10 @@ class InitTests(KitTestCase):
         self.assertEqual(WEBSITE, claude["homepage"])
         self.assertNotIn("interface", claude)
 
+        codebuddy = json.loads((plugin / kit.CODEBUDDY_MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual(("sample-plugin", "0.1.0", "./skills"), (codebuddy["name"], codebuddy["version"], codebuddy["skills"]))
+        self.assertNotIn("displayName", codebuddy)
+
         for relative in (".agents/plugins", ".claude-plugin", ".codebuddy-plugin"):
             marketplace = json.loads((self.root / relative / "marketplace.json").read_text(encoding="utf-8"))
             self.assertEqual("sample-plugin-dev", marketplace["name"])
@@ -149,13 +153,33 @@ class McpTests(KitTestCase):
         with self.assertRaises(kit.KitError):
             kit.convert_mcp_servers({"remote": {"url": "https://example.com/mcp"}})
 
+    def test_workbuddy_manifest_uses_its_own_plugin_root(self) -> None:
+        plugin = self.finish_plugin()
+        self.write_mcp(plugin, {"tool": {"command": "./bin/tool", "args": ["mcp", "./data"], "env": {"HOME_DIR": "./x"}}})
+        kit.write_text(self.root / kit.KIT_CONFIG, kit.dump_json({"codebuddy": {"mcpServers": {"tool": {"defer_loading": True}}}}))
+        kit.sync(self.root)
+        codebuddy = json.loads((plugin / kit.CODEBUDDY_MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual(
+            {
+                "command": "${CODEBUDDY_PLUGIN_ROOT}/bin/tool",
+                "args": ["mcp", "${CODEBUDDY_PLUGIN_ROOT}/data"],
+                "env": {"HOME_DIR": "${CODEBUDDY_PLUGIN_ROOT}/x"},
+                "defer_loading": True,
+            },
+            codebuddy["mcpServers"]["tool"],
+        )
+        claude = json.loads((plugin / kit.CLAUDE_MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual("${CLAUDE_PLUGIN_ROOT}/bin/tool", claude["mcpServers"]["tool"]["command"])
+
     def test_check_rejects_root_mcp_json_and_session_relative_paths(self) -> None:
         plugin = self.finish_plugin()
         self.write_mcp(plugin, {"tool": {"command": "node", "args": ["scripts/start.js"]}})
         kit.write_text(plugin / ".mcp.json", "{}\n")
+        kit.write_text(plugin / "mcp" / "server.json", "{}\n")
         kit.sync(self.root)
         errors = kit.check(self.root).errors
         self.assertTrue(any(".mcp.json is auto-loaded" in error for error in errors))
+        self.assertTrue(any("mcp/*.json is auto-loaded by WorkBuddy" in error for error in errors))
         self.assertTrue(any("must start with './'" in error for error in errors))
 
     def test_missing_binaries_block_only_releases(self) -> None:

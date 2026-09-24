@@ -64,3 +64,30 @@ jobs:
         run: |
           claude plugin validate --strict .
           claude plugin validate --strict "$(python scripts/plugin_kit.py info --field dir)"
+
+  codebuddy-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install CodeBuddy Code
+        run: npm install --global @tencent-ai/codebuddy-code
+
+      - name: Validate with CodeBuddy Code (WorkBuddy)
+        env:
+          CODEBUDDY_CONFIG_DIR: ${{ runner.temp }}/codebuddy
+        run: |
+          mkdir -p "$CODEBUDDY_CONFIG_DIR"
+          codebuddy plugin validate .
+          codebuddy plugin validate "$(python scripts/plugin_kit.py info --field dir)"

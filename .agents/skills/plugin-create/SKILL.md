@@ -32,6 +32,7 @@ description: 在基于 plugin-template 的仓库中，按用户需求制作或�
    python scripts/plugin_kit.py check
    python -m unittest discover -s tests
    claude plugin validate --strict plugins/<name>
+   codebuddy plugin validate plugins/<name>
    ```
 
 6. **本地试装**。Claude Code：`claude --plugin-dir ./plugins/<name>`。Codex：`codex plugin marketplace add .` 后 `codex plugin add <name>@<name>-dev`。MCP 改动需新开会话；有状态的 server 先用环境变量把数据目录指向临时目录。
@@ -39,8 +40,8 @@ description: 在基于 plugin-template 的仓库中，按用户需求制作或�
 
 ## 规则
 
-- 只手写 `.codex-plugin/plugin.json`、`.codex-mcp.json` 与可选的根目录 `plugin-kit.json`；`.claude-plugin/plugin.json`、根目录三个开发市场、`.claude/skills/` 与 README「## 安装」由 sync 生成。
-- 插件根目录不放 `.mcp.json` 与 Codex 格式的 `hooks/hooks.json`：Claude Code 与 WorkBuddy 会自动加载这些默认路径。
+- 只手写 `.codex-plugin/plugin.json`、`.codex-mcp.json` 与可选的根目录 `plugin-kit.json`；`.claude-plugin/plugin.json`、`.codebuddy-plugin/plugin.json`、根目录三个开发市场、`.claude/skills/` 与 README「## 安装」由 sync 生成。
+- 插件根目录不放 `.mcp.json`、`mcp/*.json` 与 Codex 格式的 `hooks/hooks.json`：Claude Code 与 WorkBuddy 会自动加载这些默认路径，WorkBuddy 还会让它们覆盖清单里的同名 MCP server。
 - 插件名、目录名与 manifest `name` 一致，发布后不改名；`repository` 发布后不改。
 - 密钥通过环境变量读取并在 README「配置」说明；不提交凭据、Token、内部地址或本机绝对路径。
 - 制作插件只修改工作区；commit、push、tag 需要用户明确授权。

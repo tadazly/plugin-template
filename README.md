@@ -33,7 +33,8 @@ Codex、Claude Code、WorkBuddy 三端通用的 Agent 插件模板。模板内�
 ```text
 plugins/<name>/                  可分发的插件（init 前为 example-plugin）
   .codex-plugin/plugin.json      唯一数据源（Codex manifest）
-  .claude-plugin/plugin.json     生成：Claude Code 与 WorkBuddy 共用
+  .claude-plugin/plugin.json     生成：Claude Code 清单
+  .codebuddy-plugin/plugin.json  生成：WorkBuddy 清单
   .codex-mcp.json                可选：Codex MCP 配置
   skills/<skill>/SKILL.md        三端共用的 Skill
 .agents/skills/                  agent 开发技能：plugin-create、plugin-readme、plugin-release

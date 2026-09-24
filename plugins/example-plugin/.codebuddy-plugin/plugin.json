@@ -1,0 +1,16 @@
+{
+  "name": "example-plugin",
+  "version": "0.1.0",
+  "description": "示例插件：演示 Codex、Claude Code 与 WorkBuddy 三端通用插件的结构",
+  "author": {
+    "name": "tadazly"
+  },
+  "homepage": "https://github.com/tadazly/plugin-template",
+  "repository": "https://github.com/tadazly/plugin-template.git",
+  "license": "MIT",
+  "keywords": [
+    "example",
+    "template"
+  ],
+  "skills": "./skills"
+}
